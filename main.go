@@ -47,11 +47,17 @@ func startServer(resolvers []Resolver, port int) {
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 		log.Printf("User redirection toward %s", redirectURL)
 	}
+	// home page handler
+	hpHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Service is running OK!"))
 
+	}
 	mux := http.NewServeMux()
 
+	mux.HandleFunc("GET /", hpHandler)
 	for _, route := range routes {
-		mux.HandleFunc(route, handler)
+		mux.HandleFunc("GET "+route, handler)
 	}
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
