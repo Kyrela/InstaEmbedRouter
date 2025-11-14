@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)
 
 var routes = []string{"/p/", "/reels/", "/reel/"}
+var startTime time.Time = time.Now()
 
 func startServer(resolvers []Resolver, port int) {
 	handler := func(w http.ResponseWriter, r *http.Request) {

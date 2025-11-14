@@ -14,10 +14,13 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-var videoProps = map[string]bool{
+var metaProps = map[string]bool{
 	"og:video":              true,
 	"og:video:secure_url":   true,
 	"twitter:player:stream": true,
+	"og:image":              true,
+	"twitter:card":          true,
+	"twitter:image":         true,
 }
 
 func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver) {
@@ -45,7 +48,7 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 			continue
 		}
 
-		if hasVideoMetaTags(doc) {
+		if hasMetaTags(doc) {
 			// Success — render once, return.
 			html, err := doc.Html()
 			if err != nil {
@@ -66,10 +69,10 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 
 }
 
-func hasVideoMetaTags(doc *goquery.Document) bool {
+func hasMetaTags(doc *goquery.Document) bool {
 	found := false
 
-	for prop := range videoProps {
+	for prop := range metaProps {
 		selector := fmt.Sprintf(`meta[property="%s"]`, prop)
 		if doc.Find(selector).Length() > 0 {
 			found = true
@@ -106,13 +109,13 @@ func rewriteAndCleanDoc(bodyBytes []byte, resolverURL string) (*goquery.Document
 
 	// relative path to absolute path
 	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
-		if prop, ok := s.Attr("property"); ok && videoProps[prop] {
+		if prop, ok := s.Attr("property"); ok && metaProps[prop] {
 			if val, ok := s.Attr("content"); ok && strings.HasPrefix(val, "/") {
 				s.SetAttr("content", origin+val)
 			}
 		}
 		// twitter:player:stream may use "name" instead of "property"
-		if name, ok := s.Attr("name"); ok && videoProps[name] {
+		if name, ok := s.Attr("name"); ok && metaProps[name] {
 			if val, ok := s.Attr("content"); ok && strings.HasPrefix(val, "/") {
 				s.SetAttr("content", origin+val)
 			}

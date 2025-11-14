@@ -7,6 +7,10 @@ import (
 	"time"
 )
 
+const checkInterval = 3 // In minutes, the interval to check the resolvers
+const logInterval = 15  // Same, but for the logging of resolvers latency
+var lastLogTime time.Time
+
 func loadResolvers(filename string) ([]Resolver, error) {
 	file, err := os.ReadFile(filename)
 	if err != nil {
@@ -46,7 +50,7 @@ func electBestResolver(resolvers []Resolver) {
 }
 
 func monitorResolvers(resolvers []Resolver) {
-	ticker := time.NewTicker(2 * time.Minute)
+	ticker := time.NewTicker(checkInterval * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -69,11 +73,15 @@ func monitorResolvers(resolvers []Resolver) {
 				r.IsUp = isUp
 
 				if err != nil {
-					errorLog.Printf("The http health check request failed : %v", err)
+					log.Printf("The http health check request failed : %v", err)
 					return
 				}
 
-				log.Printf("%s is %s since %d seconds, and pings %s", r.Url, upStatus(r.IsUp), int(time.Since(r.UptimeStart).Seconds()), r.Latency)
+				// We're logging once every logInterval min
+				if time.Since(lastLogTime) >= logInterval*time.Minute {
+					log.Printf("%s is %s since %d seconds, and pings %s", r.Url, upStatus(r.IsUp), int(time.Since(r.UptimeStart).Seconds()), r.Latency)
+					lastLogTime = time.Now()
+				}
 
 			}(&resolvers[i])
 		}
