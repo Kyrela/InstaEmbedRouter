@@ -25,6 +25,8 @@ var metaProps = map[string]bool{
 
 func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver) {
 	client := &http.Client{Timeout: 2 * time.Second}
+	var defaultDoc *goquery.Document
+	var defaultResp *http.Response
 
 	for i, resolver := range resolvers {
 		log.Printf("Proxifying request to %s", resolver.Url+req.URL.Path)
@@ -47,26 +49,38 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 			log.Printf("Error building the document from %s: %v", resolver.Url, err)
 			continue
 		}
+		if resolver.IsDefault {
+			defaultDoc = doc
+			defaultResp = resp
+		}
 
+		// the document must have meta tags to be returned. else, means the post resolving was not successful
 		if hasMetaTags(doc) {
-			// Success — render once, return.
-			html, err := doc.Html()
-			if err != nil {
-				http.Error(w, "render error", http.StatusInternalServerError)
-				return
-			}
-			w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(html))
+			sendRespToClient(w, resp, doc)
 			return
 		}
 
 		// If not found, loop continues to next resolver
 		log.Printf("No video tags found with resolver %d, trying next...", i)
 	}
-	// If we reach here, all resolvers failed.
-	http.Error(w, "No video meta tags found on any resolver", http.StatusBadGateway)
+	// If we reach here, all resolvers failed. Falling back to sending the query to the default resolver
+	if defaultRes != (Resolver{}) {
+		sendRespToClient(w, defaultResp, defaultDoc)
+	}
+	http.Error(w, "No video meta tags found on any resolver. Falling back to the default resolver if one was specified.", http.StatusBadGateway)
 
+}
+
+func sendRespToClient(w http.ResponseWriter, resp *http.Response, doc *goquery.Document) error {
+	html, err := doc.Html()
+	if err != nil {
+		http.Error(w, "render error", http.StatusInternalServerError)
+		return err
+	}
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(html))
+	return nil
 }
 
 func hasMetaTags(doc *goquery.Document) bool {
@@ -102,10 +116,8 @@ func rewriteAndCleanDoc(bodyBytes []byte, resolverURL string) (*goquery.Document
 	u, _ := url.Parse(resolverURL)
 	origin := u.Scheme + "://" + u.Host
 
-	// I'm not sure the base tag is interpreted by discord's embedding scrapper
+	// I'm not sure the base tag is interpreted by discord's embedding scrapper. But in my tests, it SEEMS to work better with it.
 	doc.Find("head").PrependHtml(`<base href="` + origin + `">`)
-
-	// Fix only the specific video-related meta tags
 
 	// relative path to absolute path
 	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
@@ -114,7 +126,7 @@ func rewriteAndCleanDoc(bodyBytes []byte, resolverURL string) (*goquery.Document
 				s.SetAttr("content", origin+val)
 			}
 		}
-		// twitter:player:stream may use "name" instead of "property"
+		//the meta property twitter:player:stream may use "name" instead of "property"
 		if name, ok := s.Attr("name"); ok && metaProps[name] {
 			if val, ok := s.Attr("content"); ok && strings.HasPrefix(val, "/") {
 				s.SetAttr("content", origin+val)

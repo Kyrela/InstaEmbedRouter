@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -20,12 +21,14 @@ type Resolver struct {
 	Latency     time.Duration
 	IsUp        bool
 	LastChecked time.Time
+	IsDefault   bool
 }
 
 func (r *Resolver) IsHttpUp() (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// mimic regular user agent to avoid possible antibots
 	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) " +
 		"Chrome/116.0.0.0 Safari/537.36"
 
@@ -34,12 +37,10 @@ func (r *Resolver) IsHttpUp() (bool, error) {
 		return false, err
 	}
 
-	// Common browser headers to reduce "bot" fingerprinting
 	req.Header.Set("User-Agent", ua)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Connection", "keep-alive")
-	// optionally set a referer that makes sense for Instagram embed services
 	req.Header.Set("Referer", "https://www.instagram.com/")
 
 	client := &http.Client{
@@ -70,7 +71,7 @@ func (r *Resolver) IsHttpUp() (bool, error) {
 		return true, nil
 	}
 
-	// non-2xx status -> treat as down (but no transport error)
+	// non-2xx status -> treat as down
 	return false, nil
 }
 
@@ -146,4 +147,12 @@ func (r Resolver) ResolveEmbed(id string) string {
 
 	return string(bodyBytes)
 
+}
+
+func (r Resolver) isDefault() (bool, error) {
+	if r.IsDefault {
+		return true, nil
+	}
+
+	return false, errors.New("No default resolver was specified. Falling back to http redirection as default behavior.")
 }

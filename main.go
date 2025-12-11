@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -14,6 +15,7 @@ var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)
 
 var routes = []string{"/p/", "/reels/", "/reel/"}
 var startTime time.Time = time.Now()
+var defaultRes Resolver
 
 func startServer(resolvers []Resolver, port int) {
 	handler := func(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +67,16 @@ func startServer(resolvers []Resolver, port int) {
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 }
 
+func findDefaultResolver(res []Resolver) (Resolver, error) {
+	for _, res := range res {
+		if ok, err := res.isDefault(); err == nil && ok {
+			return res, nil
+			//fmt.Printf("%s is the default resolver.", res.Url)
+		}
+	}
+	return Resolver{}, errors.New("No default resolver was found. Default resolving error behaviour is falling back to a HTTP return.")
+}
+
 func main() {
 	port := flag.Int("p", 8080, "port to run the server on")
 	flag.Parse()
@@ -72,6 +84,10 @@ func main() {
 	resolvers, err := loadResolvers("resolvers.json")
 	if err != nil {
 		log.Fatalf("Error reading the file: %v", err)
+	}
+	defaultRes, err = findDefaultResolver(resolvers)
+	if err != nil {
+		fmt.Printf("WARNING - No default resolver was specified.")
 	}
 
 	go monitorResolvers(resolvers)
