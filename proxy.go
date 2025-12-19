@@ -26,7 +26,7 @@ var metaProps = map[string]bool{
 func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	var defaultDoc *goquery.Document
-	var defaultResp *http.Response
+	var defaultContentType string
 
 	for i, resolver := range resolvers {
 		log.Printf("Proxifying request to %s", resolver.Url+req.URL.Path)
@@ -49,35 +49,37 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 			log.Printf("Error building the document from %s: %v", resolver.Url, err)
 			continue
 		}
-		if resolver.IsDefault {
+		if resolver.IsDefault && defaultDoc == nil {
 			defaultDoc = doc
-			defaultResp = resp
+			defaultContentType = resp.Header.Get("Content-Type")
 		}
 
 		// the document must have meta tags to be returned. else, means the post resolving was not successful
 		if hasMetaTags(doc) {
-			sendRespToClient(w, resp, doc)
+			sendRespToClient(w, resp.Header.Get("Content-Type"), doc)
 			return
 		}
 
 		// If not found, loop continues to next resolver
 		log.Printf("No video tags found with resolver %d, trying next...", i)
 	}
+	fmt.Println("Falling back  to default Resolver!")
 	// If we reach here, all resolvers failed. Falling back to sending the query to the default resolver
-	if defaultRes != (Resolver{}) {
-		sendRespToClient(w, defaultResp, defaultDoc)
+	if defaultRes != (Resolver{}) && defaultDoc != nil {
+		sendRespToClient(w, defaultContentType, defaultDoc)
+		return
 	}
-	http.Error(w, "No video meta tags found on any resolver. Falling back to the default resolver if one was specified.", http.StatusBadGateway)
+	http.Error(w, `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="theme-color" content="#CE0071"/><meta name="twitter:title" content="zzinstagram"/><meta property="og:description" content="Post not found"/></head><body>Post not found</body></html>`, http.StatusBadGateway)
 
 }
 
-func sendRespToClient(w http.ResponseWriter, resp *http.Response, doc *goquery.Document) error {
+func sendRespToClient(w http.ResponseWriter, contentType string, doc *goquery.Document) error {
 	html, err := doc.Html()
 	if err != nil {
 		http.Error(w, "render error", http.StatusInternalServerError)
 		return err
 	}
-	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.Header().Set("Content-Type", contentType)
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(html))
 	return nil
