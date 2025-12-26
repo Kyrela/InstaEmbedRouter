@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
 	"net/http"
@@ -10,8 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/PuerkitoBio/goquery"
 )
 
 var metaProps = map[string]bool{
@@ -28,10 +27,21 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 	var defaultDoc *goquery.Document
 	var defaultContentType string
 
-	for i, resolver := range resolvers {
-		log.Printf("Proxifying request to %s", resolver.Url+req.URL.Path)
+	for _, resolver := range resolvers {
+		u, err := url.Parse(resolver.Url)
+		if err != nil {
+			panic(err)
+		}
+		fullUrl := u.Scheme + "://" + getSubdomain(req.Host) + u.Host + req.URL.Path
 
-		resp, err := client.Get(resolver.Url + req.URL.Path)
+		// if using a specific mode (gallery, media-only) we check if the current resolver is able to handle it
+		if !isResolverEligible(req, resolver) {
+			continue
+		}
+
+		log.Printf("Proxifying request to %s", fullUrl)
+
+		resp, err := client.Get(fullUrl)
 		if err != nil {
 			log.Printf("Error with resolver %s: %v", resolver.Url, err)
 			continue // try next resolver
@@ -61,16 +71,16 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 		}
 
 		// If not found, loop continues to next resolver
-		log.Printf("No video tags found with resolver %d, trying next...", i)
+		log.Printf("No video tags found with current resolver, trying next...")
 	}
 	fmt.Println("Falling back  to default Resolver!")
+
 	// If we reach here, all resolvers failed. Falling back to sending the query to the default resolver
 	if defaultRes != (Resolver{}) && defaultDoc != nil {
 		sendRespToClient(w, defaultContentType, defaultDoc)
 		return
 	}
-	http.Error(w, `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><meta name="theme-color" content="#CE0071"/><meta name="twitter:title" content="zzinstagram"/><meta property="og:description" content="Post not found"/></head><body>Post not found</body></html>`, http.StatusBadGateway)
-
+	http.Error(w, `Post not found`, http.StatusBadGateway)
 }
 
 func sendRespToClient(w http.ResponseWriter, contentType string, doc *goquery.Document) error {
@@ -97,6 +107,33 @@ func hasMetaTags(doc *goquery.Document) bool {
 	}
 
 	return found
+}
+
+func isResolverEligible(req *http.Request, res Resolver) bool {
+	host := req.Host
+	host = strings.Split(host, ":")[0] // get rid of the port
+	sub := getSubdomain(host)
+
+	switch sub {
+	// gallery mode
+	case "g.":
+		if res.Gallery {
+			return true
+		}
+	case "":
+		return true
+	}
+	return false
+}
+
+func getSubdomain(host string) string {
+	host = strings.Split(host, ":")[0]
+
+	parts := strings.Split(host, ".")
+	if len(parts) < 3 || parts[0] == "www" {
+		return "" // no subdomain
+	}
+	return parts[0] + "."
 }
 
 // Cleaning the HTML body and replacing the relative URLs from the meta video tags to absolute paths

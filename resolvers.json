@@ -1,5 +1,5 @@
 [
-  { "Url": "https://vxinstagram.com", "IsDefault": true},
-  { "Url": "http://eeinstagram.com" },
-  { "Url": "https://uuinstagram.com" }
+  { "Url": "https://vxinstagram.com", "IsDefault": true },
+  { "Url": "http://eeinstagram.com", "Gallery": true },
+  { "Url": "https://uuinstagram.com", "Gallery": true }
 ]

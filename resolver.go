@@ -21,7 +21,8 @@ type Resolver struct {
 	Latency     time.Duration
 	IsUp        bool
 	LastChecked time.Time
-	IsDefault   bool
+	IsDefault   bool // defines the default resolver (fallback)
+	Gallery     bool // does resolver support the gallery mode (InstaFix does for example)
 }
 
 func (r *Resolver) IsHttpUp() (bool, error) {

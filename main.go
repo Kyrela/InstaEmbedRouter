@@ -8,17 +8,33 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"time"
 )
 
 var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)
 
 var routes = []string{"/p/", "/reels/", "/reel/"}
-var startTime time.Time = time.Now()
 var defaultRes Resolver
 
 func startServer(resolvers []Resolver, port int) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
+	// home page handler
+	hpHandler := func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Service is running OK!"))
+
+	}
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /", hpHandler)
+	for _, route := range routes {
+		mux.HandleFunc("GET "+route, reqHandler(resolvers))
+	}
+
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
+}
+
+func reqHandler(resolvers []Resolver) http.HandlerFunc {
+	// handler function for proxifying the requests to the resolvers
+	return func(w http.ResponseWriter, r *http.Request) {
 		routeHit := ""
 		for _, route := range routes {
 			if strings.HasPrefix(r.URL.Path, route) {
@@ -30,7 +46,6 @@ func startServer(resolvers []Resolver, port int) {
 			http.NotFound(w, r)
 			return
 		}
-		log.Printf("Route hit: %s", routeHit)
 
 		// If the request is from discord OR telegram, we proxify the request through the resolver
 		ua := r.Header.Get("User-Agent")
@@ -51,20 +66,6 @@ func startServer(resolvers []Resolver, port int) {
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 		log.Printf("User redirection toward %s", redirectURL)
 	}
-	// home page handler
-	hpHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Service is running OK!"))
-
-	}
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("GET /", hpHandler)
-	for _, route := range routes {
-		mux.HandleFunc("GET "+route, handler)
-	}
-
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 }
 
 func findDefaultResolver(res []Resolver) (Resolver, error) {
