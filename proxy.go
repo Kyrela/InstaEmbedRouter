@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
 	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
@@ -38,14 +39,18 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 		if !isResolverEligible(req, resolver) {
 			continue
 		}
-
+		metrics.TotalRequests.Inc()
 		log.Printf("Proxifying request to %s", fullUrl)
 
+		start := time.Now()
 		resp, err := client.Get(fullUrl)
 		if err != nil {
 			log.Printf("Error with resolver %s: %v", resolver.Url, err)
 			continue // try next resolver
 		}
+		latency := time.Since(start).Seconds()
+		metrics.ResolverRequests.WithLabelValues(resolver.Url).Inc()
+		metrics.ResolverLatency.WithLabelValues(resolver.Url).Observe(latency)
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -67,6 +72,7 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 		// the document must have meta tags to be returned. else, means the post resolving was not successful
 		if hasMetaTags(doc) {
 			sendRespToClient(w, resp.Header.Get("Content-Type"), doc)
+			metrics.SuccessfulEmbeds.WithLabelValues(resolver.Url).Inc()
 			return
 		}
 

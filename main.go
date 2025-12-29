@@ -4,6 +4,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"log"
 	"net/http"
 	"os"
@@ -28,6 +30,8 @@ func startServer(resolvers []Resolver, port int) {
 	for _, route := range routes {
 		mux.HandleFunc("GET "+route, reqHandler(resolvers))
 	}
+	// expose the prometheus metrics route
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
 }
@@ -90,7 +94,7 @@ func main() {
 	if err != nil {
 		fmt.Printf("WARNING - No default resolver was specified.")
 	}
-
+	metrics.Init()
 	go monitorResolvers(resolvers)
 	startServer(resolvers, *port)
 }
