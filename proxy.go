@@ -48,9 +48,6 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 			log.Printf("Error with resolver %s: %v", resolver.Url, err)
 			continue // try next resolver
 		}
-		latency := time.Since(start).Seconds()
-		metrics.ResolverRequests.WithLabelValues(resolver.Url).Inc()
-		metrics.ResolverLatency.WithLabelValues(resolver.Url).Observe(latency)
 
 		bodyBytes, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -64,6 +61,12 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 			log.Printf("Error building the document from %s: %v", resolver.Url, err)
 			continue
 		}
+
+		// We register the resolver metrics in prometheus
+		latency := time.Since(start).Seconds()
+		metrics.ResolverRequests.WithLabelValues(resolver.Url).Inc()
+		metrics.ResolverLatency.WithLabelValues(resolver.Url).Observe(latency)
+
 		if resolver.IsDefault && defaultDoc == nil {
 			defaultDoc = doc
 			defaultContentType = resp.Header.Get("Content-Type")
