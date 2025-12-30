@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -18,15 +19,14 @@ var routes = []string{"/p/", "/reels/", "/reel/"}
 var defaultRes Resolver
 
 func startServer(resolvers []Resolver, port int) {
+	template := template.Must(template.ParseFiles("templates/index.html"))
 	// home page handler
-	hpHandler := func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Service is running OK!"))
-
-	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /", hpHandler)
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		template.Execute(w, "")
+	})
+
 	for _, route := range routes {
 		mux.HandleFunc("GET "+route, reqHandler(resolvers))
 	}
