@@ -2,9 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
-	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
-	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
 	"net/http"
@@ -12,6 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/PuerkitoBio/goquery"
 )
 
 var metaProps = map[string]bool{
@@ -23,73 +23,104 @@ var metaProps = map[string]bool{
 	"twitter:image":         true,
 }
 
+type resolverResponse struct {
+	resolverURL string
+	startTime   time.Time
+	hasVideo    bool
+	hasImage    bool
+	payload     *goquery.Document
+	contentType string
+}
+
 func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver) {
 	client := &http.Client{Timeout: 2 * time.Second}
-	var defaultDoc *goquery.Document
-	var defaultContentType string
+	resultCh := make(chan resolverResponse, len(resolvers))
+	var resolversResponses []resolverResponse
 
 	for _, resolver := range resolvers {
-		u, err := url.Parse(resolver.Url)
-		if err != nil {
-			panic(err)
-		}
-		fullUrl := u.Scheme + "://" + getSubdomain(req.Host) + u.Host + req.URL.Path
-
-		// if using a specific mode (gallery, media-only) we check if the current resolver is able to handle it
-		if !isResolverEligible(req, resolver) {
-			continue
-		}
-		metrics.TotalRequests.Inc()
-		log.Printf("Proxifying request to %s", fullUrl)
-
-		start := time.Now()
-		resp, err := client.Get(fullUrl)
-		if err != nil {
-			log.Printf("Error with resolver %s: %v", resolver.Url, err)
-			continue // try next resolver
-		}
-
-		bodyBytes, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Printf("Error reading body from %s: %v", resolver.Url, err)
-			continue
-		}
-
-		doc, err := rewriteAndCleanDoc(bodyBytes, resolver.Url)
-		if err != nil {
-			log.Printf("Error building the document from %s: %v", resolver.Url, err)
-			continue
-		}
-
-		// We register the resolver metrics in prometheus
-		latency := time.Since(start).Seconds()
-		metrics.ResolverRequests.WithLabelValues(resolver.Url).Inc()
-		metrics.ResolverLatency.WithLabelValues(resolver.Url).Observe(latency)
-
-		if resolver.IsDefault && defaultDoc == nil {
-			defaultDoc = doc
-			defaultContentType = resp.Header.Get("Content-Type")
-		}
-
-		// the document must have meta tags to be returned. else, means the post resolving was not successful
-		if hasMetaTags(doc) {
-			sendRespToClient(w, resp.Header.Get("Content-Type"), doc)
-			metrics.SuccessfulEmbeds.WithLabelValues(resolver.Url).Inc()
-			return
-		}
-
-		// If not found, loop continues to next resolver
-		log.Printf("No video tags found with current resolver, trying next...")
+		go sendReqToResolver(req, client, resolver, resultCh)
 	}
-	fmt.Println("Falling back  to default Resolver!")
 
-	// If we reach here, all resolvers failed. Falling back to sending the query to the default resolver
-	if defaultRes != (Resolver{}) && defaultDoc != nil {
-		sendRespToClient(w, defaultContentType, defaultDoc)
+	for i := 0; i < len(resolvers); i++ {
+		response := <-resultCh
+		//log.Printf("Got a response from %s", response.resolverURL)
+		if response.hasVideo {
+			sendRespToClient(w, response.contentType, response.payload)
+			log.Printf("[video] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL)
+			// prometheus metrics ..
+			recordResolverMetrics(response)
+			return
+		} else if response.hasImage {
+			resolversResponses = append(resolversResponses, response)
+		}
+	}
+
+	if len(resolversResponses) > 0 {
+		response := resolversResponses[0]
+		sendRespToClient(w, response.contentType, response.payload)
+		log.Printf("[post] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL)
+		recordResolverMetrics(response)
 		return
 	}
+
+	// TODO: send error to client (that would embed cleanly, to display an error message)
 	http.Error(w, `Post not found`, http.StatusBadGateway)
+}
+
+func sendReqToResolver(req *http.Request, client *http.Client, resolver Resolver, resultCh chan resolverResponse) {
+	response := resolverResponse{}
+	// we guarantee the channel to always have at least 1 response (in case of early exits)
+	// so it doesnt crash the receiver
+	defer func() { resultCh <- response }()
+
+	response.resolverURL = resolver.Url
+	u, err := url.Parse(resolver.Url)
+	if err != nil {
+		return
+	}
+
+	// if using a specific mode (gallery, media-only) we check if the current resolver is able to handle it
+	if !isResolverEligible(req, resolver) {
+		log.Printf("The current resolver is not compatible with the request mode.")
+		return
+	}
+
+	fullUrl := u.Scheme + "://" + getSubdomain(req.Host) + u.Host + req.URL.Path
+	response.startTime = time.Now()
+	resp, err := client.Get(fullUrl)
+	if err != nil {
+		log.Printf("Error with resolver %s: %v", resolver.Url, err)
+		return
+	}
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		log.Printf("Error reading body from %s: %v", resolver.Url, err)
+		return
+	}
+
+	doc, err := rewriteAndCleanDoc(bodyBytes, resolver.Url)
+	if err != nil {
+		log.Printf("Error building the document from %s: %v", resolver.Url, err)
+		return
+	}
+	response.payload = doc
+
+	tags := getMetaTags(doc)
+
+	// If the tags found in the resolver's reponse contain a video (twitter:player:stream or og:video:secure_url for
+	// example)
+	for _, tag := range tags {
+		if strings.Contains(tag, "video") || strings.Contains(tag, "stream") {
+			response.hasVideo = true
+		}
+		if strings.Contains(tag, "image") {
+			response.hasImage = true
+		}
+	}
+	response.contentType = resp.Header.Get("Content-Type")
+
 }
 
 func sendRespToClient(w http.ResponseWriter, contentType string, doc *goquery.Document) error {
@@ -104,18 +135,19 @@ func sendRespToClient(w http.ResponseWriter, contentType string, doc *goquery.Do
 	return nil
 }
 
-func hasMetaTags(doc *goquery.Document) bool {
-	found := false
+func getMetaTags(doc *goquery.Document) []string {
+	var tags []string
 
-	for prop := range metaProps {
-		selector := fmt.Sprintf(`meta[property="%s"]`, prop)
-		if doc.Find(selector).Length() > 0 {
-			found = true
-			break
+	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
+		if prop, ok := s.Attr("property"); ok {
+			tags = append(tags, prop)
 		}
-	}
+		if name, ok := s.Attr("name"); ok {
+			tags = append(tags, name)
+		}
+	})
 
-	return found
+	return tags
 }
 
 func isResolverEligible(req *http.Request, res Resolver) bool {
@@ -129,6 +161,11 @@ func isResolverEligible(req *http.Request, res Resolver) bool {
 		if res.Gallery {
 			return true
 		}
+	// test subdomain I'm personnally using for testing purpose - whitelisting it here
+	case "tst.":
+		req.Host = strings.ReplaceAll(req.Host, "tst.", "")
+		return true
+
 	case "":
 		return true
 	}
@@ -183,4 +220,13 @@ func rewriteAndCleanDoc(bodyBytes []byte, resolverURL string) (*goquery.Document
 	})
 
 	return doc, nil
+}
+
+func recordResolverMetrics(resp resolverResponse) {
+	metrics.TotalRequests.Inc()
+	metrics.SuccessfulEmbeds.WithLabelValues(resp.resolverURL).Inc()
+
+	latency := time.Since(resp.startTime).Seconds()
+	metrics.ResolverRequests.WithLabelValues(resp.resolverURL).Inc()
+	metrics.ResolverLatency.WithLabelValues(resp.resolverURL).Observe(latency)
 }

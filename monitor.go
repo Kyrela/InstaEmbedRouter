@@ -26,29 +26,6 @@ func loadResolvers(filename string) ([]Resolver, error) {
 	return resolvers, nil
 }
 
-// To set the best resolver, we simply  put the one with the least latency as the 1st element of the Resolvers array
-// this way, the proxy logic will try the best one 1st
-func electBestResolver(resolvers []Resolver) {
-	if len(resolvers) == 0 {
-		return
-	}
-
-	bestIndex := -1
-	for i := range resolvers {
-		if !resolvers[i].IsUp {
-			continue
-		}
-		if bestIndex == -1 || resolvers[i].Latency < resolvers[bestIndex].Latency {
-			bestIndex = i
-		}
-	}
-
-	if bestIndex > 0 {
-		resolvers[0], resolvers[bestIndex] = resolvers[bestIndex], resolvers[0]
-		log.Printf("Best resolver moved to index 0: %s", resolvers[0].Url)
-	}
-}
-
 func monitorResolvers(resolvers []Resolver) {
 	ticker := time.NewTicker(checkInterval * time.Minute)
 	defer ticker.Stop()
@@ -85,8 +62,6 @@ func monitorResolvers(resolvers []Resolver) {
 
 			}(&resolvers[i])
 		}
-		// We check for a new best resolver each time we're monitoring the resolvers
-		electBestResolver(resolvers)
 		<-ticker.C
 	}
 }

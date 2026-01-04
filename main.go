@@ -57,14 +57,12 @@ func reqHandler(resolvers []Resolver) http.HandlerFunc {
 			proxyRequest(w, r, resolvers)
 			return
 		}
-		// Else, we simply redirect the user to the best resolver
+		// Else, we simply redirect the user to the instagram post
 
-		// ..the most performant resolver is always placed first in the array
-		currentBest := resolvers[0]
 		// Extract the post ID
 		id := strings.TrimPrefix(r.URL.Path, routeHit)
 		// Construct the redirect URL
-		redirectURL := strings.Trim(currentBest.Url, "/") + routeHit + id
+		redirectURL := "https://www.instagram.com" + routeHit + id
 
 		// Send HTTP 302 redirect
 		http.Redirect(w, r, redirectURL, http.StatusFound)
