@@ -1,8 +1,12 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"html/template"
 	"log"
 	"net/http"
 	"os"
@@ -12,9 +16,29 @@ import (
 var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)
 
 var routes = []string{"/p/", "/reels/", "/reel/"}
+var defaultRes Resolver
 
 func startServer(resolvers []Resolver, port int) {
-	handler := func(w http.ResponseWriter, r *http.Request) {
+	template := template.Must(template.ParseFiles("templates/index.html"))
+	// home page handler
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		template.Execute(w, "")
+	})
+
+	for _, route := range routes {
+		mux.HandleFunc("GET "+route, reqHandler(resolvers))
+	}
+	// expose the prometheus metrics route
+	mux.Handle("GET /metrics", promhttp.Handler())
+
+	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
+}
+
+func reqHandler(resolvers []Resolver) http.HandlerFunc {
+	// handler function for proxifying the requests to the resolvers
+	return func(w http.ResponseWriter, r *http.Request) {
 		routeHit := ""
 		for _, route := range routes {
 			if strings.HasPrefix(r.URL.Path, route) {
@@ -26,7 +50,6 @@ func startServer(resolvers []Resolver, port int) {
 			http.NotFound(w, r)
 			return
 		}
-		log.Printf("Route hit: %s", routeHit)
 
 		// If the request is from discord OR telegram, we proxify the request through the resolver
 		ua := r.Header.Get("User-Agent")
@@ -34,27 +57,27 @@ func startServer(resolvers []Resolver, port int) {
 			proxyRequest(w, r, resolvers)
 			return
 		}
-		// Else, we simply redirect the user to the best resolver
+		// Else, we simply redirect the user to the instagram post
 
-		// ..the most performant resolver is always placed first in the array
-		currentBest := resolvers[0]
 		// Extract the post ID
 		id := strings.TrimPrefix(r.URL.Path, routeHit)
 		// Construct the redirect URL
-		redirectURL := strings.Trim(currentBest.Url, "/") + routeHit + id
+		redirectURL := "https://www.instagram.com" + routeHit + id
 
 		// Send HTTP 302 redirect
 		http.Redirect(w, r, redirectURL, http.StatusFound)
 		log.Printf("User redirection toward %s", redirectURL)
 	}
+}
 
-	mux := http.NewServeMux()
-
-	for _, route := range routes {
-		mux.HandleFunc(route, handler)
+func findDefaultResolver(res []Resolver) (Resolver, error) {
+	for _, res := range res {
+		if ok, err := res.isDefault(); err == nil && ok {
+			return res, nil
+			//fmt.Printf("%s is the default resolver.", res.Url)
+		}
 	}
-
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%d", port), mux))
+	return Resolver{}, errors.New("No default resolver was found. Default resolving error behaviour is falling back to a HTTP return.")
 }
 
 func main() {
@@ -65,7 +88,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error reading the file: %v", err)
 	}
-
+	defaultRes, err = findDefaultResolver(resolvers)
+	if err != nil {
+		fmt.Printf("WARNING - No default resolver was specified.")
+	}
+	metrics.Init()
 	go monitorResolvers(resolvers)
 	startServer(resolvers, *port)
 }
