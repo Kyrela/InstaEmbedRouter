@@ -85,7 +85,7 @@ func sendReqToResolver(req *http.Request, client *http.Client, resolver Resolver
 		return
 	}
 
-	fullUrl := u.Scheme + "://" + getSubdomain(req.Host) + u.Host + req.URL.Path
+	fullUrl := u.Scheme + "://" + u.Host + req.URL.Path
 	response.startTime = time.Now()
 	resp, err := client.Get(fullUrl)
 	if err != nil {
@@ -159,14 +159,13 @@ func isResolverEligible(req *http.Request, res Resolver) bool {
 	// gallery mode
 	case "g.":
 		if res.Gallery {
+			// TODO: add ?gallery=true at the very end of the URL
+			req.URL.Path = req.URL.Path + "?gallery=true"
 			return true
 		}
 	// test subdomain I'm personnally using for testing purpose - whitelisting it here
 	case "tst.":
 		req.Host = strings.ReplaceAll(req.Host, "tst.", "")
-		return true
-
-	case "":
 		return true
 	}
 	return false
