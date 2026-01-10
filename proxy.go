@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
 	"net/http"
@@ -9,9 +11,6 @@ import (
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
-	"github.com/PuerkitoBio/goquery"
 )
 
 var metaProps = map[string]bool{
@@ -46,7 +45,7 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 		//log.Printf("Got a response from %s", response.resolverURL)
 		if response.hasVideo {
 			sendRespToClient(w, response.contentType, response.payload)
-			log.Printf("[video] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL)
+			log.Printf("[video] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL.Path)
 			// prometheus metrics ..
 			recordResolverMetrics(response)
 			return
@@ -57,8 +56,9 @@ func proxyRequest(w http.ResponseWriter, req *http.Request, resolvers []Resolver
 
 	if len(resolversResponses) > 0 {
 		response := resolversResponses[0]
+		// TODO: probably a code smell to have these lines dupplicated
 		sendRespToClient(w, response.contentType, response.payload)
-		log.Printf("[post] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL)
+		log.Printf("[post] Sent response from %s for https://instagram.com%s", response.resolverURL, req.URL.Path)
 		recordResolverMetrics(response)
 		return
 	}
@@ -85,7 +85,8 @@ func sendReqToResolver(req *http.Request, client *http.Client, resolver Resolver
 		return
 	}
 
-	fullUrl := u.Scheme + "://" + getSubdomain(req.Host) + u.Host + req.URL.Path
+	// "sanitizing" the URL so we don't carry additionnal parameters (like the ?igsh)
+	fullUrl := u.Scheme + "://" + u.Host + req.URL.Path + "?" + req.URL.RawQuery
 	response.startTime = time.Now()
 	resp, err := client.Get(fullUrl)
 	if err != nil {
@@ -159,13 +160,14 @@ func isResolverEligible(req *http.Request, res Resolver) bool {
 	// gallery mode
 	case "g.":
 		if res.Gallery {
+			// Instafix's way to enable "gallery mode" (i.e remove the post desc. from embed) is to add this parameter to the URL
+			req.URL.RawQuery = "gallery=true"
 			return true
 		}
-	// test subdomain I'm personnally using for testing purpose - whitelisting it here
+	// subdomain I'm personnally using for testing purpose - whitelisting it here
 	case "tst.":
 		req.Host = strings.ReplaceAll(req.Host, "tst.", "")
 		return true
-
 	case "":
 		return true
 	}
