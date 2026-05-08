@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -21,7 +20,6 @@ type Resolver struct {
 	Latency     time.Duration
 	IsUp        bool
 	LastChecked time.Time
-	IsDefault   bool // defines the default resolver (fallback)
 	Gallery     bool // does resolver support the gallery mode (InstaFix does for example)
 }
 
@@ -148,12 +146,4 @@ func (r Resolver) ResolveEmbed(id string) string {
 
 	return string(bodyBytes)
 
-}
-
-func (r Resolver) isDefault() (bool, error) {
-	if r.IsDefault {
-		return true, nil
-	}
-
-	return false, errors.New("No default resolver was specified. Falling back to http redirection as default behavior.")
 }

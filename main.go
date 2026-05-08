@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"html/template"
@@ -71,16 +70,6 @@ func reqHandler(resolvers []Resolver) http.HandlerFunc {
 	}
 }
 
-func findDefaultResolver(res []Resolver) (Resolver, error) {
-	for _, res := range res {
-		if ok, err := res.isDefault(); err == nil && ok {
-			return res, nil
-			//fmt.Printf("%s is the default resolver.", res.Url)
-		}
-	}
-	return Resolver{}, errors.New("No default resolver was found. Default resolving error behaviour is falling back to a HTTP return.")
-}
-
 func main() {
 	port := flag.Int("p", 8080, "port to run the server on")
 	flag.Parse()
@@ -88,10 +77,6 @@ func main() {
 	resolvers, err := loadResolvers("resolvers.json")
 	if err != nil {
 		log.Fatalf("Error reading the file: %v", err)
-	}
-	defaultRes, err = findDefaultResolver(resolvers)
-	if err != nil {
-		fmt.Printf("WARNING - No default resolver was specified.")
 	}
 	metrics.Init()
 	go monitorResolvers(resolvers)
