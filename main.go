@@ -4,13 +4,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"html/template"
 	"log"
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)

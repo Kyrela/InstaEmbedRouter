@@ -2,8 +2,6 @@ package main
 
 import (
 	"bytes"
-	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
-	"github.com/PuerkitoBio/goquery"
 	"io"
 	"log"
 	"net/http"
@@ -11,6 +9,9 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Knoppiix/InstagramEmbedResolver/metrics"
+	"github.com/PuerkitoBio/goquery"
 )
 
 var metaProps = map[string]bool{
