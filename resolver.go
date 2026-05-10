@@ -14,13 +14,20 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
+type RenderMode struct {
+	Query     map[string]string
+	Subdomain string
+}
+
 type Resolver struct {
 	Url         string
 	UptimeStart time.Time
 	Latency     time.Duration
 	IsUp        bool
 	LastChecked time.Time
-	Gallery     bool // does resolver support the gallery mode (InstaFix does for example)
+	Normal      *RenderMode
+	Gallery     *RenderMode
+	Direct      *RenderMode
 }
 
 func (r *Resolver) IsHttpUp() (bool, error) {
