@@ -15,7 +15,20 @@ import (
 
 var errorLog = log.New(os.Stderr, "ERROR: ", log.LstdFlags)
 
-var routes = []string{"/p/", "/reels/", "/reel/"}
+var routes = []string{
+	"/p/{id}",
+	"/p/{id}/{$}",
+	"/reels/{id}",
+	"/reels/{id}/{$}",
+	"/reel/{id}",
+	"/reel/{id}/{$}",
+	"/{username}/p/{id}",
+	"/{username}/p/{id}/{$}",
+	"/{username}/reel/{id}",
+	"/{username}/reel/{id}/{$}",
+	"/share/{id}",
+	"/share/{id}/{$}",
+}
 var defaultRes Resolver
 
 func startServer(resolvers []Resolver, port int) {
@@ -39,17 +52,6 @@ func startServer(resolvers []Resolver, port int) {
 func reqHandler(resolvers []Resolver) http.HandlerFunc {
 	// handler function for proxifying the requests to the resolvers
 	return func(w http.ResponseWriter, r *http.Request) {
-		routeHit := ""
-		for _, route := range routes {
-			if strings.HasPrefix(r.URL.Path, route) {
-				routeHit = route
-				break
-			}
-		}
-		if routeHit == "" {
-			http.NotFound(w, r)
-			return
-		}
 
 		// If the request is from discord OR telegram, we proxify the request through the resolver
 		ua := r.Header.Get("User-Agent")
@@ -59,10 +61,8 @@ func reqHandler(resolvers []Resolver) http.HandlerFunc {
 		}
 		// Else, we simply redirect the user to the instagram post
 
-		// Extract the post ID
-		id := strings.TrimPrefix(r.URL.Path, routeHit)
 		// Construct the redirect URL
-		redirectURL := "https://www.instagram.com" + routeHit + id
+		redirectURL := "https://instagram.com" + r.URL.Path
 
 		// Send HTTP 302 redirect
 		http.Redirect(w, r, redirectURL, http.StatusFound)
