@@ -61,8 +61,14 @@ func reqHandler(resolvers []Resolver) http.HandlerFunc {
 		}
 		// Else, we simply redirect the user to the instagram post
 
+		// Extract the img_index query parameter if it exists
+		imgIndex := r.URL.Query().Get("img_index")
+		var query string
+		if imgIndex != "" {
+			query = fmt.Sprintf("?img_index=%s", imgIndex)
+		}
 		// Construct the redirect URL
-		redirectURL := "https://instagram.com" + r.URL.Path
+		redirectURL := "https://instagram.com" + r.URL.Path + query
 
 		// Send HTTP 302 redirect
 		http.Redirect(w, r, redirectURL, http.StatusFound)

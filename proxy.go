@@ -88,6 +88,9 @@ func sendReqToResolver(req *http.Request, client *http.Client, resolver Resolver
 	}
 
 	q := url.Values{}
+	if imgIndex := req.URL.Query().Get("img_index"); imgIndex != "" {
+		q.Set("img_index", imgIndex)
+	}
 	for k, v := range renderMode.Query {
 		q.Set(k, v)
 	}
