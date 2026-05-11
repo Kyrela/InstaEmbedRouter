@@ -95,6 +95,7 @@ func sendReqToResolver(req *http.Request, client *http.Client, resolver Resolver
 		q.Set(k, v)
 	}
 
+	// if the user specified functional parameters (like ?image_index) we encode them
 	query := ""
 	if len(q) > 0 {
 		query = "?" + q.Encode()
@@ -179,6 +180,7 @@ func getRenderMode(req *http.Request, res Resolver) *RenderMode {
 	case "n":
 		return res.Normal
 	case "tst", "":
+		// subdomain used for tests only
 		return &RenderMode{}
 	}
 	return nil
